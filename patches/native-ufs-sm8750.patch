@@ -549,13 +549,27 @@ index 4a596c8..a5402c4 100644
    if (hostRead4k (0, 1, 1, gScratch) != kIOReturnSuccess) {
      *why = "GPT header read";
      return false;
-@@ -89,7 +95,7 @@ static bool findRootLayout (RootLayout *layout, const char **why)
+@@ -89,7 +95,20 @@ static bool findRootLayout (RootLayout *layout, const char **why)
    }
    uint32_t blocks = (count * 128 + 4095) / 4096;
    // This path uses READ(10), so reject geometry beyond its actual LBA range.
 -  if (first < entriesLba + blocks || last < first || backup <= last || backup > UINT32_MAX ||
-+  if (first < entriesLba + blocks || last < first || backup <= last || backup > UINT32_MAX || backup > lastLba ||
-       backup - last <= blocks) {
+-      backup - last <= blocks) {
++  // v42: OnePlus/OPPO put the backup GPT header *before* lastUsable, so the original
++  // "backup must follow the usable range" test rejects the stock partition table and
++  // returns before a single entry is read.  Measured on hummer:
++  //   backupLba 0x03AD8FFF, lastUsable 0x03AD8FFA
++  // Only reject a backup header that lands inside the primary usable range, or that
++  // makes READ(10) addressing impossible.
++  if (first < entriesLba + blocks || last < first || backup > UINT32_MAX || backup > lastLba) {
++    *why = "GPT usable range";
++    return false;
++  }
++  if ((backup >= first && backup <= last) || (backup == last)) {
++    *why = "GPT usable range";
++    return false;
++  }
++  if ((backup > last) && (backup - last <= blocks)) {
      *why = "GPT usable range";
      return false;
 @@ -103,7 +109,6 @@ static bool findRootLayout (RootLayout *layout, const char **why)
