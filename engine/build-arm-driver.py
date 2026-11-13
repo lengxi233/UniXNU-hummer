@@ -86,30 +86,44 @@ while index < len(arguments):
     index += 1
 # The warning set is per toolchain: Apple clang has no -Wunnecessary-virtual-specifier, and the XNU build
 # suppresses its own extra warnings through CCC_OVERRIDE_OPTIONS, which this builder never sees. Each optional
-# warning is tested on its own with -Werror, because clang only resolves a -W flag once it has something to
-# compile and diagnose; a single batch probe (or an -E /dev/null one) reports nothing and lets every unknown
-# flag reach the real compile, where -Werror turns it into a hard error.
+# warning is tested on its own with -Werror against a real translation unit: clang only resolves a -W flag once
+# it has something to compile and diagnose, so a batch or -E /dev/null probe silently accepts unknown flags.
+# `command` already ends in "-o <destination>", so the probe is built from the flags alone, never from it.
 OPTIONAL_WARNINGS = ['-Wno-unused-parameter', '-Wno-c99-designator', '-Wno-reorder-init-list',
                      '-Wno-deprecated-enum-enum-conversion', '-Wno-unnecessary-virtual-specifier',
                      '-Wno-unsafe-buffer-usage', '-Wno-shadow-header',
                      '-Wno-missing-designated-field-initializers', '-Wno-unused-but-set-global']
-def supported_warnings(flags):
+def probe_flags(flags):
+    """Keep only the optional warnings this toolchain actually knows."""
+    # Drop the driver, the source path and its -o pair; keep include/define/target switches.
+    prefix = [value for value in command[1:] if value not in (str(source), str(destination))]
+    trimmed = []
+    skip = False
+    for value in prefix:
+        if skip:
+            skip = False
+            continue
+        if value == '-o':
+            skip = True
+            continue
+        trimmed.append(value)
     if not flags:
         return []
     supported = []
     with tempfile.TemporaryDirectory() as scratch:
-        probe = Path(scratch) / 'probe.cpp'
-        probe.write_text('int unixnu_warning_probe;\n')
-        object_file = str(Path(scratch) / 'probe.o')
+        probe_source = Path(scratch) / 'probe.cpp'
+        probe_source.write_text('int unixnu_warning_probe;\n')
+        probe_object = str(Path(scratch) / 'probe.o')
         for flag in flags:
-            result = subprocess.run([*command, '-c', str(probe), '-o', object_file, '-Werror', flag],
+            result = subprocess.run([command[0], *trimmed, '-c', str(probe_source), '-o', probe_object,
+                                     '-Werror', flag],
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
             if result.returncode:
                 print('{0}: toolchain lacks {1}'.format(identifier, flag))
             else:
                 supported.append(flag)
     return supported
-supported = supported_warnings(OPTIONAL_WARNINGS)
+supported = probe_flags(OPTIONAL_WARNINGS)
 command.extend(['-Wall', '-Wextra', '-Werror', *supported,
                 '-I', str(ROOT / '.cache/xnu-work/osfmk')])
 if component in ('NativeVirtioBlock', 'NativeRamBlock', 'NativeUfs'):
@@ -127,6 +141,12 @@ if component=='NativeOfflineGPU':
     command += ['-I',str(ROOT/'drivers/VirtioMmioConsole')]
 if component in ('NativeLegacyDisplay','NativeHidInput'):
     command += ['-I', str(out)]
+# The A830 backend reaches into the board layer for its GMU/SMMU/power headers, which
+# package/ maps to kits/hummer (board.toml [board] kit = "hummer"). Without this the
+# component stopped at "ShengGmu.h file not found": the engine's own list below only
+# covers NativeAdreno, and its kits/sheng + build/sheng-gmu directories are empty here.
+if component in ('Adreno740', 'NativeAdreno'):
+    command += ['-I', str(ROOT / 'kits/hummer')]
 if component == 'NativeAdreno':
     command += ['-I', str(ROOT / 'kits/ArmSmmu4K'), '-I', str(ROOT / 'kits/AdrenoPM4'),
                 '-I', str(ROOT / 'kits/sheng'), '-I', str(ROOT / 'kits/Sm8550Platform'), '-I', str(ROOT / 'kits/AdrenoFirmware'),
