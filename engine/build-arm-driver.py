@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Compile the generic platform expert against the actual source-kernel ABI."""
 import argparse
+import os
 import re
 import json
 import tomllib
@@ -13,7 +14,11 @@ from kernel_target import ARCH, TRIPLE, check_object
 
 ROOT = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description=__doc__)
-catalog = {entry['id']: entry for entry in tomllib.loads((ROOT / 'components.toml').read_text())['component']
+# The raw catalog, kept so a component's declared `dependencies` can be resolved to the
+# directory each one is checked out in (see the include path construction further down).
+CATALOG_ENTRIES = {entry['id']: entry
+                   for entry in tomllib.loads((ROOT / 'components.toml').read_text())['component']}
+catalog = {entry['id']: entry for entry in CATALOG_ENTRIES.values()
            if entry['kind'] == 'driver' and any(name.endswith('.cpp') for name in entry.get('source_files', []))}
 aliases = {entry.get('legacy_name', identifier): identifier for identifier, entry in catalog.items()}
 auxiliary = ['NativeLegacyDisplay', 'NativeGOPPresenter', 'NativeOfflineGPU', 'NativeOfflineAccelerator', 'NativeIOGPUProviderProbe']
@@ -28,7 +33,7 @@ if identifier == 'ShengUfs' and ARCH == 'arm64e':
     if any((args.negative_aes_kat, args.verified_root, args.verified_root_bundle, args.negative_verified_block)):
         parser.error('The source UFS runtime always uses the authenticated policy bundle of the OS profile')
     raise SystemExit(subprocess.call([sys.executable, ROOT / 'scripts/build-sheng-source-storage.py', '--tree', ROOT]))
-metadata = catalog.get(identifier, {})
+metadata = CATALOG_ENTRIES.get(identifier, {})
 runtime = metadata.get('legacy_name', identifier)
 args.component = runtime
 if args.verified_root_bundle and not args.verified_root:
@@ -117,7 +122,8 @@ def probe_flags(flags):
         for flag in flags:
             result = subprocess.run([command[0], *trimmed, '-c', str(probe_source), '-o', probe_object,
                                      '-Werror', flag],
-                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                                    cwd=record['directory'])
             if result.returncode:
                 print('{0}: toolchain lacks {1}'.format(identifier, flag))
             else:
@@ -141,16 +147,32 @@ if component=='NativeOfflineGPU':
     command += ['-I',str(ROOT/'drivers/VirtioMmioConsole')]
 if component in ('NativeLegacyDisplay','NativeHidInput'):
     command += ['-I', str(out)]
-# The A830 backend reaches into the board layer for its GMU/SMMU/power headers, which
-# package/ maps to kits/hummer (board.toml [board] kit = "hummer"). Without this the
-# component stopped at "ShengGmu.h file not found": the engine's own list below only
-# covers NativeAdreno, and its kits/sheng + build/sheng-gmu directories are empty here.
-if component in ('Adreno740', 'NativeAdreno'):
-    command += ['-I', str(ROOT / 'kits/hummer')]
-if component == 'NativeAdreno':
-    command += ['-I', str(ROOT / 'kits/ArmSmmu4K'), '-I', str(ROOT / 'kits/AdrenoPM4'),
-                '-I', str(ROOT / 'kits/sheng'), '-I', str(ROOT / 'kits/Sm8550Platform'), '-I', str(ROOT / 'kits/AdrenoFirmware'),
-                '-I', str(ROOT / 'build/sheng-gmu'), '-I', str(ROOT / 'build/adreno740/include')]
+# A driver that includes another component's headers has to be given that component's
+# directory, and the catalog already says which ones those are: `dependencies` is the
+# exact set the engine resolves and builds first. Hard-coding the list per component is
+# what broke this twice -- the Adreno740 fork pulls ShengGmu.h out of the board package
+# (package/ maps to kits/<board.kit>, here kits/hummer) plus AdrenoPM4.h and the
+# ArmSmmu4K stream headers, while the catalog's own `NativeAdreno` branch still names
+# kits/sheng and build/sheng-gmu, neither of which exists on this board. Deriving the
+# include path from the declared dependency keeps the recipe honest: add a dependency,
+# get its headers, and nothing else.
+for dependency in metadata.get('dependencies', []):
+    directory = CATALOG_ENTRIES.get(dependency, {}).get('path')
+    if directory:
+        command += ['-I', str(ROOT / directory)]
+# The board package is not a catalog component, so it never appears in `dependencies`:
+# prepare() links this device's package/ to kits/<board.kit>, and that is where the
+# board headers live -- ShengGmu.h and friends for the GPU, the SoC headers for the
+# rest. Any component that includes one of them needs this path.
+# board.toml belongs to the device repository, not to this engine tree, so it is read
+# through UNIXNU_DEVICE (set by the wrapper and by unixnu.kernel). Without it the board
+# kit name is unknown and the board headers stay invisible.
+device = os.environ.get('UNIXNU_DEVICE')
+board_kit = None
+if device and (Path(device) / 'board.toml').is_file():
+    board_kit = tomllib.loads((Path(device) / 'board.toml').read_text())['board'].get('kit')
+if board_kit and (ROOT / 'kits' / board_kit).is_dir():
+    command += ['-I', str(ROOT / 'kits' / board_kit)]
 (out / 'compile-command.json').write_text(json.dumps(command, indent=2) + '\n')
 result = subprocess.run(command, cwd=record['directory'], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 (out / 'compile.log').write_text(result.stdout)
