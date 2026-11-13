@@ -18,6 +18,10 @@ def run(cmd,**kw):return subprocess.check_output([str(x) for x in cmd],timeout=9
 def require(v,why):
     if not v:raise SystemExit(why)
 def sha(p):return hashlib.sha256(Path(p).read_bytes()).hexdigest()
+def source_name(p):
+    """Tree-relative when the file is inside the tree, absolute when it is not."""
+    try:return str(Path(p).relative_to(ROOT))
+    except ValueError:return str(p)
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--kernelcache',type=Path,required=True)
 args=parser.parse_args()
@@ -273,7 +277,11 @@ sources=[board_sources.driver('NativeMobileDisplay')/'NativeLegacyDisplay.cpp',
          ROOT/'kits/hummer/OriginalHidDeviceABI.h',ROOT/'kits/hummer/hid-vtable.txt',Path(__file__),
          ROOT/'scripts/build-stage7-driver.py',ROOT/'scripts/original_stage7.py',ROOT/'scripts/audit-stage7-display.py']
 (OUT/'build-report.json').write_text(json.dumps(dict(original_sha256=original.sha256,
-    archive_sha256=sha(archive),source_sha256={str(p.relative_to(ROOT)):sha(p) for p in sources},
+    archive_sha256=sha(archive),
+    # A source may sit outside the tree: the HID input comes from the fetched feed when the
+    # component is not selected. relative_to() raises for those, so name them by their
+    # absolute path instead of losing the whole report.
+    source_sha256={source_name(p):sha(p) for p in sources},
     virtual_entries=358,owned_entries=owned,bindings={n:hex(v) for n,v in bindings.items()},
     original_instructions_modified=False,runtime_qualified=False),indent=2)+'\n')
 print('PASS: original display ABI and compiled archive; runtime remains unqualified')
