@@ -54,7 +54,14 @@ fetch = ["AppleLogo", "KernelCache", "DeviceTree", "StaticTrustCache", "Cryptex1
 # build/adreno740/libAdreno740.a; the archive the kernel force-loads
 # (CONFIG_XNU_NATIVE_ADRENO) is build/native-adreno/libNativeAdreno.a, because
 # that one also carries the SM8750 platform layer and the firmware blobs.
-include = ["ArmCpu", "ArmDTPlatform", "DarwinBoot", "XnuPrelink", "QcomGeniSpi", "Adreno740"]
+# VerifiedRoot is a kit, not a driver: it contributes the authenticated-block headers
+# (verified_root.h) and the host-side policy tooling, and builds nothing. The archive
+# plan below compiles three objects with --root-windows, and all three include that
+# header, so the kit has to be part of the assembled tree. Leaving it out meant
+# out/<work>/tree/kits/VerifiedRoot was never created at all -- the directory was
+# absent rather than empty -- and both prepare-ufs-policies.py and build-native-ufs.py
+# died on a file-not-found for a path that simply was not there.
+include = ["ArmCpu", "ArmDTPlatform", "DarwinBoot", "XnuPrelink", "QcomGeniSpi", "Adreno740", "VerifiedRoot"]
 
 [kernel]
 defconfig = "hummer_defconfig"
