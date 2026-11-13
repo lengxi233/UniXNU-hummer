@@ -211,7 +211,14 @@ public:
     }
     bool isMainDisplay() override {return primary;}
     // GOP timing is firmware-owned; report our logical scanout state.
-    bool isTimingEnabled() override {return primary && bootMapping && displayOn;}
+    // Not an override: the frozen ABI in OriginalLegacyFramebufferABI.h names only the
+    // slots this port actually calls by prototype (isMainDisplay, getDotPitch,
+    // supportedFrameInfo, getDisplayDimensions, startHardware, kickSwapQueue,
+    // validateSwap, completeCurrentSwap, getRefreshAttributes, collectCompletionReports).
+    // Every other slot is an opaque entry, so a named method here would claim to override
+    // something the base class never declares -- and because the class is then still
+    // abstract, OSDefineMetaClassAndStructors' `new` cannot allocate it.
+    bool isTimingEnabled() const {return primary && bootMapping && displayOn;}
     bool getRefreshAttributes(uint64_t *words,bool fixed) override {
         if(!IOMobileFramebufferLegacy::getRefreshAttributes(words,fixed) || !words)return false;
         unsigned hz=0;PE_parse_boot_argn("sheng-vsync",&hz,sizeof(hz));
