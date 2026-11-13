@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Compile the generic platform expert against the actual source-kernel ABI."""
 import argparse
-import json
 import re
+import json
 import tomllib
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 
 from kernel_target import ARCH, TRIPLE, check_object
 
@@ -84,20 +85,31 @@ while index < len(arguments):
         command.append(value)
     index += 1
 # The warning set is per toolchain: Apple clang has no -Wunnecessary-virtual-specifier, and the XNU build
-# suppresses its own extra warnings through CCC_OVERRIDE_OPTIONS, which this builder never sees. Probe every
-# optional warning against the compiler actually replaying the record instead of hard-coding one vendor.
+# suppresses its own extra warnings through CCC_OVERRIDE_OPTIONS, which this builder never sees. Each optional
+# warning is tested on its own with -Werror, because clang only resolves a -W flag once it has something to
+# compile and diagnose; a single batch probe (or an -E /dev/null one) reports nothing and lets every unknown
+# flag reach the real compile, where -Werror turns it into a hard error.
 OPTIONAL_WARNINGS = ['-Wno-unused-parameter', '-Wno-c99-designator', '-Wno-reorder-init-list',
                      '-Wno-deprecated-enum-enum-conversion', '-Wno-unnecessary-virtual-specifier',
                      '-Wno-unsafe-buffer-usage', '-Wno-shadow-header',
                      '-Wno-missing-designated-field-initializers', '-Wno-unused-but-set-global']
-probe = subprocess.run([*command, '-x', 'c++', '-E', '/dev/null', '-o', '/dev/null',
-                        *OPTIONAL_WARNINGS], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-# clang prints "unknown warning option '<flag>'" as a warning without -Werror and as an error with it,
-# so key off the message instead of the diagnostic level.
-unsupported = set(re.findall(r"unknown warning option '([^']+)'", probe.stdout))
-supported = [flag for flag in OPTIONAL_WARNINGS if flag not in unsupported]
-if unsupported:
-    print('{0}: toolchain lacks {1}'.format(identifier, ' '.join(sorted(unsupported))))
+def supported_warnings(flags):
+    if not flags:
+        return []
+    supported = []
+    with tempfile.TemporaryDirectory() as scratch:
+        probe = Path(scratch) / 'probe.cpp'
+        probe.write_text('int unixnu_warning_probe;\n')
+        object_file = str(Path(scratch) / 'probe.o')
+        for flag in flags:
+            result = subprocess.run([*command, '-c', str(probe), '-o', object_file, '-Werror', flag],
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            if result.returncode:
+                print('{0}: toolchain lacks {1}'.format(identifier, flag))
+            else:
+                supported.append(flag)
+    return supported
+supported = supported_warnings(OPTIONAL_WARNINGS)
 command.extend(['-Wall', '-Wextra', '-Werror', *supported,
                 '-I', str(ROOT / '.cache/xnu-work/osfmk')])
 if component in ('NativeVirtioBlock', 'NativeRamBlock', 'NativeUfs'):
