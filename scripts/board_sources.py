@@ -49,3 +49,44 @@ def kit_path(*parts):
 def tree():
     """The build tree, which is where a recipe runs from."""
     return _roots()[0]
+
+
+def hid_input_source():
+    """NativeHidInput.cpp, from the assembled tree or from the fetched feed.
+
+    The source is the catalog driver ShengHidInput. Selecting that component would also
+    run its own recipe (build-sheng-hid-input.py), which qualifies the object against a
+    prelink candidate under build/xnu-prelink -- but the archive stage runs before that
+    prelink exists, so selecting it only fails. This board compiles the same source its
+    own way (frozen 207-slot vtable, staged for late registration), so the file is taken
+    from wherever prepare() put it: the tree when something linked it, and the feed
+    checkout otherwise. The checkout is the repository root, so the file is at its top
+    level; a submodule-style layout would nest it under drivers/ShengHidInput.
+    """
+    import os
+    root = _roots()[0]
+    for candidate in (root / 'drivers/ShengHidInput', root / 'drivers/NativeHidInput'):
+        if (candidate / 'NativeHidInput.cpp').is_file():
+            return candidate / 'NativeHidInput.cpp'
+    out = os.environ.get('UNIXNU_OUT')
+    candidates = [Path(out) / 'feeds'] if out else []
+    # <work>/tree is <out>/<board>/<profile>/<config>/tree, so four levels up is <out>.
+    # A shallower tree (a standalone run from the repository) has no such parent; skip it
+    # rather than raising IndexError from the middle of a lookup.
+    if len(root.parents) > 3:
+        candidates.append(root.parents[3] / 'feeds')
+    device = os.environ.get('UNIXNU_DEVICE')
+    if device:
+        candidates.append(Path(device) / 'out' / 'feeds')
+    for feeds in candidates:
+        if not feeds.is_dir():
+            continue
+        for entry in sorted(feeds.iterdir()):
+            for relative in ('drivers/ShengHidInput/NativeHidInput.cpp', 'NativeHidInput.cpp'):
+                source = entry / relative
+                if source.is_file():
+                    return source
+    raise SystemExit(
+        'NativeHidInput.cpp is missing from the tree and from every feed under %s. '
+        'The ShengHidInput source was not fetched; run "unixnu fetch -D <device>" first.'
+        % ', '.join(str(path) for path in candidates))
