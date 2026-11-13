@@ -125,7 +125,13 @@ def main():
     output.mkdir(parents=True, exist_ok=True)
     obj = output / (NAME[args.component] + '.o')
     command = compile_command(record, board_sources.driver(args.component) / (args.component + '.cpp'), obj)
+    # GccUfs.h refuses to compile the SM8750 branch without the board's root partition
+    # policy: the register map differs per SoC generation, so the header makes the board
+    # name the GPT entry it treats as the root instead of inheriting the SM8550 default.
+    # "userdata" is this board's entry (board.toml [userdata], PKR110) and is also the
+    # default findRootLayout() falls back to, so the driver and the header agree.
     command += ['-DNATIVE_UFS_SM8750=1', '-DNATIVE_UFS_READ_ONLY=1',
+                '-DUFS_ROOT_PARTITION="userdata"',
                 '-Wno-unused-function']
     if args.root_windows:
         # The root-window object is the one that includes verified_root.h, and that header
