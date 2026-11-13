@@ -22,8 +22,12 @@ def main():
     record = json.loads(recipe.read_text().strip().rstrip(','))
     output = root / 'build/boot-progress'
     output.mkdir(parents=True, exist_ok=True)
+    # <work>/tree is <out>/<board>/<profile>/<config>/tree, so the IPSW members sit four
+    # levels up at <out>/ipsw/<build> -- the same relative depth the archive plan spells
+    # out for --kernelcache (../../../../ipsw/21H461/...). Two levels up points inside
+    # <out>/hummer and finds nothing.
     subprocess.run(['python3', root / 'scripts/prepare-boot-logo.py',
-                    root / '../../ipsw/21H461/applelogo@2732~ipad.im4p', output / 'BootLogo.h'], check=True)
+                    root / '../../../../ipsw/21H461/applelogo@2732~ipad.im4p', output / 'BootLogo.h'], check=True)
     source = board_sources.driver('BootProgress')
     obj = output / 'BootProgress.o'
     command = compile_command(record, source / 'BootProgress.c', obj)
