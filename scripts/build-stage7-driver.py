@@ -39,9 +39,12 @@ def hid_input_source(tree):
         if not feeds.is_dir():
             continue
         for entry in sorted(feeds.iterdir()):
-            source = entry / 'drivers/ShengHidInput/NativeHidInput.cpp'
-            if source.is_file():
-                return source
+            # The checkout is the repository root: the file sits at the top level, and
+            # only a submodule-style checkout would nest it under drivers/ShengHidInput.
+            for relative in ('drivers/ShengHidInput/NativeHidInput.cpp', 'NativeHidInput.cpp'):
+                source = entry / relative
+                if source.is_file():
+                    return source
     raise SystemExit(
         'NativeHidInput.cpp is missing from the tree and from every feed under %s. '
         'The ShengHidInput source was not fetched; run "unixnu fetch -D <device>" first.'
