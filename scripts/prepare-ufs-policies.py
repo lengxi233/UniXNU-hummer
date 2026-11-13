@@ -17,9 +17,32 @@ class View(ctypes.Structure):
                 ('volume_uuid', ctypes.c_uint8 * 16), ('image_sha256', ctypes.c_uint8 * 32)]
 
 
+def require_kit(kit):
+    """Fail with the cause, not with a CalledProcessError from a missing file.
+
+    kits/VerifiedRoot is an engine submodule, so an empty directory here means the
+    engine checkout did not get its submodules -- not that this board is misconfigured.
+    Naming that distinction is the difference between a one-line fix and a 30-minute
+    CI round spent reading "No such file or directory" from the middle of a traceback.
+    """
+    check = kit / 'tests/check.py'
+    header = kit / 'include/verified_root.h'
+    if check.is_file() and header.is_file():
+        return
+    missing = [str(path) for path in (check, header) if not path.is_file()]
+    raise SystemExit(
+        'kits/VerifiedRoot is incomplete (%s missing). It is an engine submodule: '
+        'the prepared tree was assembled from an engine checkout whose submodules were '
+        'not populated. Check that `git submodule update --init --recursive` ran in the '
+        'engine tree and that kits/VerifiedRoot resolves to a real directory, not an '
+        'empty one. Resolved kit: %s -> %s'
+        % (', '.join(missing), kit, kit.resolve()))
+
+
 def prepare(tree, inputs, openssl):
     kit = tree / 'kits/VerifiedRoot'
     host = tree / 'build/verified-root-host'
+    require_kit(kit)
     # Reuse the real parser/signature/block tests and their private local build key.
     subprocess.run(['python3', kit / 'tests/check.py', '--output', host,
                     '--openssl-prefix', openssl], check=True)
