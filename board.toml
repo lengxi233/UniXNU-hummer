@@ -87,6 +87,16 @@ patch_series = ["arch:patches/xnu/series", "soc:patches/xnu/series", "os:patches
 archives = [
   "build-corecrypto-14.py",
   "build-corecrypto-14.py --namespace",
+  # The OS profile sets CONFIG_XNU_SOURCE_MOCKFS=y, so build-xnu-4k-baseline.sh
+  # runs with MOCKFS_MODE=1 and force-loads
+  # $ROOT/build/mockfs-fixture/libmockfs_fixture.a, asserting it exists at
+  # line 781. This list replaces profiles/arch/arm64's default outright rather
+  # than extending it, and the default is the only place that built the archive,
+  # so leaving it out stopped the kernel step at "test -f ... failed" right after
+  # the boot console finally linked. It compiles the three bsd/miscfs/mockfs
+  # sources against the vfs_conf.o recipe with -DMOCKFS=1; it is the offline
+  # minimal-root fixture, not an APFS driver.
+  "build-mockfs-fixture.py",
   "build-libpthread-kernel.py",
   "build-native-aes.py",
   "build-native-ufs.py --root-windows",
