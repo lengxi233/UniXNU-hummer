@@ -66,7 +66,14 @@ fetch = ["AppleLogo", "KernelCache", "DeviceTree", "StaticTrustCache", "Cryptex1
 # prelink runs. Like VerifiedRoot it only exists in the assembled tree when it is
 # selected here: the source lives at drivers/ShengHidInput and is fetched by revision.
 # Its own dependency, ShengNovatekTouch, comes in through the same closure.
-include = ["ArmCpu", "ArmDTPlatform", "DarwinBoot", "XnuPrelink", "QcomGeniSpi", "Adreno740", "VerifiedRoot", "ShengHidInput"]
+# ShengHidInput is deliberately NOT selected here. Its catalog recipe
+# (build-sheng-hid-input.py) qualifies the source against a prelink candidate under
+# build/xnu-prelink, and the archive stage runs before that prelink exists, so selecting
+# it only produces "No reference candidate available". This board compiles the same
+# source its own way instead: build-stage7-display.py -> build-stage7-driver.py binds the
+# inherited IOHIDDevice slots to the frozen 207-slot vtable in kits/hummer, and reads the
+# source straight from the fetched feed (see hid_input_source() there).
+include = ["ArmCpu", "ArmDTPlatform", "DarwinBoot", "XnuPrelink", "QcomGeniSpi", "Adreno740", "VerifiedRoot"]
 
 [kernel]
 defconfig = "hummer_defconfig"
