@@ -93,8 +93,19 @@ def main():
     command += ['-DNATIVE_UFS_SM8750=1', '-DNATIVE_UFS_READ_ONLY=1',
                 '-Wno-unused-function']
     if args.root_windows:
+        # The root-window object is the one that includes verified_root.h, and that header
+        # belongs to the engine's VerifiedRoot submodule. Without this check the failure
+        # surfaces as "'verified_root.h' file not found" from inside clang, which reads
+        # like a missing -I rather than an engine checkout with no submodules.
+        verified_include = root / 'kits/VerifiedRoot/include'
+        if not (verified_include / 'verified_root.h').is_file():
+            raise SystemExit(
+                'build-native-ufs: %s/verified_root.h is missing. kits/VerifiedRoot is an '
+                'engine submodule; the prepared tree was assembled from an engine checkout '
+                'whose submodules were not populated (resolved: %s).'
+                % (verified_include, verified_include.resolve()))
         command += ['-I', str(root / 'build/storage-abi/include'),
-                    '-I', str(root / 'kits/VerifiedRoot/include'),
+                    '-I', str(verified_include),
                     '-I', str(board_sources.driver('NativeVirtioBlock')),
                     '-DNATIVE_VERIFIED_BLOCK=1', '-DNATIVE_VERIFIED_BLOCK_MULTI_POLICY=1',
                     '-mgeneral-regs-only']
