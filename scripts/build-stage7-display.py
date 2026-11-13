@@ -11,7 +11,8 @@ ROOT=Path(__file__).resolve().parents[1];OUT=ROOT/'build/native-legacy-display';
 sys.path.insert(0,str(next((d for d in (ROOT/'kits/XnuPrelink', ROOT/'kits/NativePrelink') if d.is_dir()), ROOT/'kits/XnuPrelink')))
 sys.path.insert(0,str(ROOT/'scripts'))
 import board_sources
-HID_DIR=next((d for d in (ROOT/'drivers/ShengHidInput', ROOT/'drivers/NativeHidInput') if d.is_dir()), ROOT/'drivers/ShengHidInput')
+# The source may come from the tree or from the fetched feed; board_sources knows which.
+HID_SOURCE=board_sources.hid_input_source()
 from native_prelink import macho,backed_offset,exports
 def run(cmd,**kw):return subprocess.check_output([str(x) for x in cmd],timeout=90,**kw)
 def require(v,why):
@@ -268,7 +269,7 @@ sources=[board_sources.driver('NativeMobileDisplay')/'NativeLegacyDisplay.cpp',
          board_sources.driver('NativeKeyStoreEvents')/'NativeKeyStoreEvents.cpp',
          ROOT/'scripts/stage7/Stage7Probe.cpp',
          ROOT/'kits/hummer/HummerHidInput.cpp',
-         HID_DIR/'NativeHidInput.cpp',
+         HID_SOURCE,
          ROOT/'kits/hummer/OriginalHidDeviceABI.h',ROOT/'kits/hummer/hid-vtable.txt',Path(__file__),
          ROOT/'scripts/build-stage7-driver.py',ROOT/'scripts/original_stage7.py',ROOT/'scripts/audit-stage7-display.py']
 (OUT/'build-report.json').write_text(json.dumps(dict(original_sha256=original.sha256,
