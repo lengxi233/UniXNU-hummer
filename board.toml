@@ -61,7 +61,12 @@ fetch = ["AppleLogo", "KernelCache", "DeviceTree", "StaticTrustCache", "Cryptex1
 # out/<work>/tree/kits/VerifiedRoot was never created at all -- the directory was
 # absent rather than empty -- and both prepare-ufs-policies.py and build-native-ufs.py
 # died on a file-not-found for a path that simply was not there.
-include = ["ArmCpu", "ArmDTPlatform", "DarwinBoot", "XnuPrelink", "QcomGeniSpi", "Adreno740", "VerifiedRoot"]
+# ShengHidInput (legacy name NativeHidInput) is compiled by build-stage7-display.py,
+# which binds its inherited IOHIDDevice slots to the frozen 207-slot vtable before the
+# prelink runs. Like VerifiedRoot it only exists in the assembled tree when it is
+# selected here: the source lives at drivers/ShengHidInput and is fetched by revision.
+# Its own dependency, ShengNovatekTouch, comes in through the same closure.
+include = ["ArmCpu", "ArmDTPlatform", "DarwinBoot", "XnuPrelink", "QcomGeniSpi", "Adreno740", "VerifiedRoot", "ShengHidInput"]
 
 [kernel]
 defconfig = "hummer_defconfig"
