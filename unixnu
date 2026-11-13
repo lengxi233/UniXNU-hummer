@@ -51,6 +51,14 @@ def prepare(device=DEVICE, source=None):
     # without it. hummer's GPU is an A830, so the kit learns the A8xx layout here.
     kit_patches = [(device / 'patches' / name, module) for name, module in (
         ('adreno-firmware-a8xx.patch', 'AdrenoFirmware'),)]
+    # Engine scripts replaced verbatim in the prepared tree, with the reason each one cannot
+    # stay as the engine ships it. build-arm-driver.py hard-codes -Wno-unnecessary-virtual-specifier
+    # and compiles the catalog drivers with -Werror; Apple clang (the macOS CI toolchain, and the
+    # only one that can run the Xcode SDK steps) has no such warning, so every kernel-stage
+    # component recipe died on an unknown-warning-option error and the archive plan never
+    # finished. The replacement probes each optional warning against the compiler it is about
+    # to use, which keeps the -Werror guarantee on both toolchains.
+    engine_overrides = [(device / 'engine/build-arm-driver.py', 'scripts/build-arm-driver.py')]
     # Everything that ends up inside the built kernel decides this fingerprint. `package/`
     # becomes kits/<board.kit> and `scripts/` holds the recipes that compile it, so a change
     # to either one produces a different payload. Leaving them out meant "only edit a driver"
@@ -74,6 +82,10 @@ def prepare(device=DEVICE, source=None):
         path = device / name
         if path.is_file():
             digest.update(path.read_bytes())
+    for source, _ in engine_overrides:
+        if source.is_file():
+            digest.update(str(source.relative_to(device)).encode())
+            digest.update(source.read_bytes())
     for directory in ('package', 'scripts', 'dts', 'configs', 'patches'):
         root = device / directory
         if not root.is_dir():
@@ -165,6 +177,16 @@ def prepare(device=DEVICE, source=None):
             if kit_patch.is_file():
                 git('apply', '--check', kit_patch, cwd=tree / 'kits' / module)
                 git('apply', kit_patch, cwd=tree / 'kits' / module)
+        # Engine scripts this board has to correct. The wrapper cannot patch the engine
+        # repository itself (no write access to UniXNU/UniXNU), and components.toml keeps
+        # naming build-arm-driver.py, so the file is replaced in the prepared tree after
+        # the engine is checked out. Each entry is (device file, path inside the tree) and
+        # is verified to differ only in the documented way before the tree is cached.
+        for source, relative in engine_overrides:
+            destination = tree / relative
+            if not destination.is_file():
+                raise ValueError('engine override targets an absent file: ' + relative)
+            destination.write_bytes(source.read_bytes())
         tree.rename(target)
     return target
 
