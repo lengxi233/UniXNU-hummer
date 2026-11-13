@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import runpy
 import struct
@@ -66,6 +67,40 @@ def inject_read_retry(root):
     print('NativeUfs: injected bounded read retry')
 
 
+def soc_kit_includes(root):
+    """Include path for the SoC layer's own kits.
+
+    GccUfs.h here is a one-line forwarder to <Sm8750Platform/GccUfs.h>, and that file
+    belongs to the SoC source feed (feeds.toml "sm8750"), not to the engine and not to
+    this repository. tree.py deliberately skips kind 'soc' when it links modules, so
+    the kit never appears under <tree>/kits and the forwarder cannot resolve. Point the
+    compiler at the feed checkout's kits/ directory instead: the header is spelled
+    Sm8750Platform/GccUfs.h, so the parent is what has to be on the search path.
+    """
+    # Candidate feed roots, nearest first. UNIXNU_OUT is the wrapper's output root; the
+    # other two cover a recipe run without it: <work>/tree sits at <out>/<board>/<profile>/
+    # <config>/tree, so ../../../../feeds is the same directory, and a standalone run from
+    # the device repository keeps feeds under out/.
+    candidates = []
+    out = os.environ.get('UNIXNU_OUT')
+    if out:
+        candidates.append(Path(out) / 'feeds')
+    candidates.append(root.parents[3] / 'feeds')
+    device = os.environ.get('UNIXNU_DEVICE')
+    if device:
+        candidates.append(Path(device) / 'out' / 'feeds')
+    for feeds in candidates:
+        if not feeds.is_dir():
+            continue
+        for entry in sorted(feeds.iterdir()):
+            if (entry / 'kits' / 'Sm8750Platform' / 'GccUfs.h').is_file():
+                return ['-I', str(entry / 'kits')]
+    raise SystemExit(
+        'build-native-ufs: Sm8750Platform/GccUfs.h is missing from every SoC feed under '
+        '%s. The SoC source (feeds.toml "sm8750") was not fetched; run '
+        '"unixnu fetch -D <device>" first.' % ', '.join(str(path) for path in candidates))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root-windows', action='store_true')
@@ -106,6 +141,7 @@ def main():
                 % (verified_include, verified_include.resolve()))
         command += ['-I', str(root / 'build/storage-abi/include'),
                     '-I', str(verified_include),
+                    *soc_kit_includes(root),
                     '-I', str(board_sources.driver('NativeVirtioBlock')),
                     '-DNATIVE_VERIFIED_BLOCK=1', '-DNATIVE_VERIFIED_BLOCK_MULTI_POLICY=1',
                     '-mgeneral-regs-only']
