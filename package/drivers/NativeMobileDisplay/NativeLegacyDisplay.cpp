@@ -511,6 +511,11 @@ public:
     LEAF(306)
     LEAF(307)
     LEAF(338)
+    // 345 is abstract in the generated ABI too: OriginalLegacyFramebufferABI.h marks it
+    // `=0` alongside the six above. Omitting it leaves the class abstract, and the only
+    // symptom is `new NativeLegacyDisplay` failing a few lines later -- clang names the
+    // slot in a note, not in the error, so this list has to match the header exactly.
+    LEAF(345)
 #undef LEAF
 };
 OSDefineMetaClassAndStructors(NativeLegacyDisplay,IOMobileFramebufferLegacy)
