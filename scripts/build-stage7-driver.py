@@ -14,41 +14,6 @@ sys.path.insert(0, str(root / 'scripts'))
 import board_sources
 
 
-def hid_input_source(tree):
-    """NativeHidInput.cpp, from the assembled tree or from the fetched feed.
-
-    The source is the catalog driver ShengHidInput. Selecting that component would also
-    run its own recipe (build-sheng-hid-input.py), which qualifies the object against a
-    prelink candidate under build/xnu-prelink -- but the archive stage runs before that
-    prelink exists, so selecting it only fails. This board compiles the same source its
-    own way (frozen 207-slot vtable, staged for late registration), so the source is
-    taken from wherever prepare() put it: the tree when the component is linked, and the
-    feed checkout otherwise.
-    """
-    for candidate in (tree / 'drivers/ShengHidInput', tree / 'drivers/NativeHidInput'):
-        if (candidate / 'NativeHidInput.cpp').is_file():
-            return candidate / 'NativeHidInput.cpp'
-    out = os.environ.get('UNIXNU_OUT')
-    candidates = [Path(out) / 'feeds'] if out else []
-    # <work>/tree is <out>/<board>/<profile>/<config>/tree.
-    candidates.append(tree.parents[3] / 'feeds')
-    device = os.environ.get('UNIXNU_DEVICE')
-    if device:
-        candidates.append(Path(device) / 'out' / 'feeds')
-    for feeds in candidates:
-        if not feeds.is_dir():
-            continue
-        for entry in sorted(feeds.iterdir()):
-            # The checkout is the repository root: the file sits at the top level, and
-            # only a submodule-style checkout would nest it under drivers/ShengHidInput.
-            for relative in ('drivers/ShengHidInput/NativeHidInput.cpp', 'NativeHidInput.cpp'):
-                source = entry / relative
-                if source.is_file():
-                    return source
-    raise SystemExit(
-        'NativeHidInput.cpp is missing from the tree and from every feed under %s. '
-        'The ShengHidInput source was not fetched; run "unixnu fetch -D <device>" first.'
-        % ', '.join(str(path) for path in candidates))
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('component', choices=['NativeLegacyDisplay', 'NativeKeyStoreEvents', 'Stage7Probe', 'HummerHidInput', 'NativeHidInput'])
 component = parser.parse_args().component
@@ -62,7 +27,7 @@ source = (root / 'scripts/stage7/Stage7Probe.cpp' if component == 'Stage7Probe' 
           # input driver is a catalog component (ShengHidInput, formerly NativeHidInput).
           board_sources.driver('NativeMobileDisplay') / 'NativeLegacyDisplay.cpp' if component == 'NativeLegacyDisplay' else
           board_sources.driver('NativeKeyStoreEvents') / 'NativeKeyStoreEvents.cpp' if component == 'NativeKeyStoreEvents' else
-          hid_input_source(root))
+          board_sources.hid_input_source())
 record = json.loads((root / 'build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/iokit/DEVELOPMENT/IOPlatformExpert.cpo.json').read_text().strip().rstrip(','))
 obj = directory / (component + '.o')
 compile_command = runpy.run_path(str(root / 'scripts/build-arm-platform.py'))['compile_command']
