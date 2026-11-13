@@ -58,6 +58,13 @@ def prepare(device=DEVICE, source=None):
     # component recipe died on an unknown-warning-option error and the archive plan never
     # finished. The replacement probes each optional warning against the compiler it is about
     # to use, which keeps the -Werror guarantee on both toolchains.
+    # Sources a board recipe compiles but must not select as a component. Selecting one
+    # makes the engine run its catalog recipe too, and ShengHidInput's recipe qualifies the
+    # object against a prelink candidate that only exists after the archive stage -- so the
+    # selection fails on its own build command before any of this board's archives run.
+    # The file is still needed (build-stage7-display.py compiles NativeHidInput against the
+    # frozen 207-slot vtable), so fetch it by revision without adding it to the tree.
+    auxiliary_sources = ['ShengHidInput']
     engine_overrides = [
         (device / 'engine/build-arm-driver.py', 'scripts/build-arm-driver.py'),
         # Replays the bsd_init record with -Werror. The record names one -I per XNU export
@@ -193,6 +200,32 @@ def prepare(device=DEVICE, source=None):
             if not destination.is_file():
                 raise ValueError('engine override targets an absent file: ' + relative)
             destination.write_bytes(source.read_bytes())
+        # Fetch the auxiliary sources into out/feeds next to the rest. They are checked out
+        # but never linked into the tree, so no component recipe runs for them. The clone
+        # directory name follows the engine's own rule (feeds._clone_dir): the repository
+        # stem plus the first eight hex digits of sha1("<url>\n<revision>"), so the recipe
+        # side can find it with the same arithmetic.
+        if auxiliary_sources:
+            entries = tomllib.loads((tree / 'components.toml').read_text())['component']
+            by_id = {entry['id']: entry for entry in entries}
+            feeds_dir = device / 'out' / 'feeds'
+            feeds_dir.mkdir(parents=True, exist_ok=True)
+            for identifier in auxiliary_sources:
+                entry = by_id.get(identifier)
+                if entry is None:
+                    raise ValueError('auxiliary source is not in the catalog: ' + identifier)
+                url, wanted = entry.get('repository'), entry.get('revision')
+                if not url or not wanted:
+                    raise ValueError('auxiliary source needs repository and revision: ' + identifier)
+                key = hashlib.sha1(('%s\n%s' % (url, wanted)).encode()).hexdigest()[:8]
+                checkout = feeds_dir / ('%s-%s' % (Path(url).stem, key))
+                if not (checkout / '.git').is_dir():
+                    git('clone', '--quiet', '--no-checkout', url, checkout)
+                present = subprocess.run(['git', 'cat-file', '-e', wanted + '^{commit}'], cwd=checkout,
+                                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+                if not present:
+                    git('fetch', '--quiet', '--depth', '1', 'origin', wanted, cwd=checkout)
+                git('checkout', '--quiet', '--detach', wanted, cwd=checkout)
         tree.rename(target)
     return target
 
