@@ -30,13 +30,28 @@ def require_kit(kit):
     if check.is_file() and header.is_file():
         return
     missing = [str(path) for path in (check, header) if not path.is_file()]
-    raise SystemExit(
-        'kits/VerifiedRoot is incomplete (%s missing). It is an engine submodule: '
-        'the prepared tree was assembled from an engine checkout whose submodules were '
-        'not populated. Check that `git submodule update --init --recursive` ran in the '
-        'engine tree and that kits/VerifiedRoot resolves to a real directory, not an '
-        'empty one. Resolved kit: %s -> %s'
-        % (', '.join(missing), kit, kit.resolve()))
+    # Dump the actual state: whether the kit is a symlink, where it points, and what
+    # is inside. That is the difference between "the submodule was never checked out"
+    # and "the link resolves somewhere empty", which need opposite fixes.
+    report = ['kits/VerifiedRoot is incomplete (%s missing).' % ', '.join(missing),
+              'It is an engine submodule; the prepared tree was assembled from an engine',
+              'checkout whose submodules were not populated.',
+              'kit path      : %s' % kit,
+              'is symlink    : %s' % kit.is_symlink(),
+              'resolves to   : %s' % kit.resolve(),
+              'exists        : %s' % kit.exists(),
+              'is dir        : %s' % kit.is_dir()]
+    if kit.is_dir():
+        try:
+            entries = sorted(entry.name for entry in kit.iterdir())
+        except OSError as error:
+            entries = ['<unreadable: %s>' % error]
+        report.append('entries       : %s' % (entries or '<empty>'))
+        include = kit / 'include'
+        if include.is_dir():
+            report.append('include/      : %s'
+                          % sorted(entry.name for entry in include.iterdir()))
+    raise SystemExit('\n'.join(report))
 
 
 def prepare(tree, inputs, openssl):
