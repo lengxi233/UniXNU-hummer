@@ -7,7 +7,7 @@ name: build-kernel
 on:
   workflow_dispatch:
   push:
-    branches: [ main, master ]
+    branches: [ main, master, known-good-v139-build ]
     # 只改文档不该烧一轮 40 分钟的 macOS 构建；代码 / 补丁 / board.toml 仍然自动编。
     paths-ignore:
       - '**.md'
@@ -22,11 +22,10 @@ jobs:
   build:
     runs-on: macos-15
     timeout-minutes: 360
-    # 必须显式给写权限：没有它 GITHUB_TOKEN 是只读的，gh release upload 会 403。
-    # 而那一步带 continue-on-error，失败会被吞掉 —— 于是日志永远发不出来，
-    # v75 连续几轮"看不见报错"就是这么来的。
+    # Temporary provenance branch: upload only the commit-bound Actions artifact.
+    # Keep repository contents read-only and never overwrite a rolling release.
     permissions:
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -160,27 +159,6 @@ jobs:
             out/hummer/unixnu.lock
           if-no-files-found: warn
           retention-days: 7
-
-      # 日志可诊断性：job logs 需要 admin、artifacts 需要认证，只有 release 资产
-      # 是公开可下载的，所以每轮都把日志打到 ci-latest。删掉这一步就看不到报错。
-      - name: Publish build outputs
-        if: always()
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # 无论多早失败都要产出一个可上传的包，否则这一轮的报错永远看不到。
-          tar czf ci-logs.tar.gz out/hummer/logs 2>/dev/null || true
-          if [ ! -s ci-logs.tar.gz ]; then
-            { echo "no hummer logs were produced (failure before the log dir)"; \
-              echo "run: $GITHUB_RUN_ID"; } > ci-logs.txt
-            tar czf ci-logs.tar.gz ci-logs.txt
-          fi
-          gh release view ci-latest >/dev/null 2>&1 || \
-            gh release create ci-latest --title "ci latest" --notes "Rolling build outputs."
-          for f in ci-logs.tar.gz out/hummer/kernel/kernel.macho out/hummer/payload/payload.img; do
-            [ -f "$f" ] && gh release upload ci-latest "$f" --clobber
-          done
 
       - name: Result
         run: |
