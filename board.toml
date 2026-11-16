@@ -94,7 +94,7 @@ archives = [
   #      SM8750 平台层（GPUCC 电源 / SMMU 规划 / ZAP / socinfo / OPP 票）与
   #      HummerGpu.cpp，把固件作为强符号一起归档。
   "fetch-hummer-gpu-firmware.py",
-  "build-hummer-adreno-kits.py",
+  # "build-hummer-adreno-kits.py",   # disabled: needs newer kits/ArmSmmu4K
 ]
 
 [kernel.prelink]
@@ -286,3 +286,4 @@ BUILDID_STRING = "hummer-13t-port"
 
 [bootimg]
 embed_payload = true
+
